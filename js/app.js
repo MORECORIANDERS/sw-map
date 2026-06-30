@@ -225,14 +225,22 @@ let chart = null;
 let treeData = null;
 
 function initChart() {
+  try {
+    log('initChart 开始');
   const wrapper = document.getElementById("chart-wrapper");
   const container = document.getElementById("chart-container");
+
+  if (!container) { log('❌ chart-container 不存在'); return; }
+  if (typeof echarts === 'undefined') { log('❌ ECharts 未加载'); return; }
 
   // 动态计算画布高度：按节点数量估算
   var totalBonds = 0;
   if (typeof BOND_DETAIL_MAP !== "undefined") {
     totalBonds = Object.keys(BOND_DETAIL_MAP).length;
   }
+  log('BOND_DETAIL_MAP keys: ' + totalBonds);
+  if (totalBonds === 0) { log('⚠️ 债券数据为空，可能数据尚未加载'); }
+
   // 每个 bond 节点约 26px，加上各级中间节点（约总节点数的 40%）
   var estNodes = totalBonds * 1.4;
   var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 26, 2000);
@@ -240,8 +248,16 @@ function initChart() {
   container.style.width = "100%";
   container.style.height = dynamicHeight + "px";
 
+  if (typeof echarts === 'undefined') {
+    log('❌ echarts.init 无法执行');
+    return;
+  }
   chart = echarts.init(container);
+  log('ECharts init 成功');
+
   buildBondIndex();
+  log('bondIndex 构建完成');
+
   treeData = buildTreeData();
   const option = getChartOption(treeData);
   chart.setOption(option);
@@ -252,7 +268,12 @@ function initChart() {
   // 显示数据日期
   showDataInfo();
   // 初始化搜索
-  initSearch();
+    initSearch();
+  } catch(e) {
+    log('❌ initChart 异常: ' + (e.message || e));
+    if (infoEl) infoEl.textContent = '❌ 加载错误: ' + (e.message || '未知错误');
+  }
+  log('initChart 完成');
 }
 
 /* ============================
