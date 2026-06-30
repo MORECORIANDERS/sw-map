@@ -1,5 +1,82 @@
 # 可转债申万行业思维导图
 
+基于 ECharts Tree 的交互式可转债行业分类脑图，按申万行业体系（六大板块 → 一级行业 → 二级行业）整理展示 342 只可转债。
+
+## 功能特性
+
+- **LR 树状图布局**：从左到右展示四层结构——风格板块 → 一级行业 → 二级行业 → 可转债
+- **逐层展开/折叠**：点击节点展开下一级（ECharts 原生 `expandAndCollapse`），再点击折叠
+- **右侧详情面板**：点击节点展示详情，面板自动让位不遮挡树图
+- **行业详情**：一级/二级行业展示成份个数、市盈率、市净率、股息率等基本面数据
+- **转债详情**：展示转债代码、正股、评级、规模、价格、涨跌幅等信息
+- **正股映射**：通过正股代码查询申万行业分类，无匹配时回退使用转债自身行业字段
+- **六大板块配色**：周期、先进制造、科技(TMT)、消费、医药医疗、金融地产使用不同颜色区分
+- **工具栏**：展开全部 / 收起全部 / 重置视图
+- **浏览器缓存**：大数据文件首次加载后缓存到 localStorage，后续秒开
+- **纵向滚动**：画布高度 2000px，内容溢出时纵向滚动
+
+## 快速开始
+
+### 方式一：直接打开
+
+用浏览器打开 `index.html` 即可，无需任何依赖。
+
+### 方式二：本地 HTTP 服务器
+
+```bash
+cd d:\Codes\sw-map
+python -m http.server 8000
+```
+
+访问 http://localhost:8000。
+
+## 文件结构
+
+```
+sw-map/
+├── index.html              # 入口页面（动态加载数据文件）
+├── css/
+│   └── style.css           # 样式（布局、面板避让、响应式）
+├── js/
+│   ├── app.js              # 主逻辑（ECharts 初始化、节点点击、详情渲染）
+│   ├── swIndustryData.js   # 申万行业分类数据（31 一级 + 131 二级行业）
+│   ├── bondData.js         # 可转债数据（342 只，含价格、评级、正股等字段）
+│   └── stockIndustryMap.js # 正股→行业映射（5528 只 A 股）
+├── sw_stock_industry.json  # 申万行业分类成分股原始数据
+├── sw_industry_data.json   # 申万行业分类信息原始数据
+└── 申万行业分类成分股.json   # 行业成分股映射原始数据
+```
+
+## 数据说明
+
+| 文件 | 来源 | 说明 |
+|------|------|------|
+| `bondData.js` | CloudBase MySQL → Python 导出 | 342 只可转债，含代码、名称、正股、评级、价格、涨跌幅等 |
+| `stockIndustryMap.js` | `申万行业分类成分股.json` → Python 转换 | 5528 只 A 股的申万行业归属 |
+| `swIndustryData.js` | `sw_industry_data.json` 人工整理 | 31 个一级行业、131 个二级行业、6 大风格板块映射 |
+
+### 行业映射逻辑
+
+1. 优先通过转债的 `stockCode` 在 `STOCK_INDUSTRY_MAP` 中查询申万行业
+2. 无匹配时使用转债自身 `industryLevel1` / `industryLevel2` 字段
+3. 所有行业归入六大风格板块（SECTOR_MAPPING）
+
+### 缓存机制
+
+`bondData.js`（~328KB）和 `stockIndustryMap.js`（~594KB）通过 localStorage 缓存，24 小时过期。首次加载后后续刷新秒开。
+
+## 技术栈
+
+- [ECharts 5.4.3](https://echarts.apache.org/)（CDN 加载）- Tree 系列图表
+- 原生 HTML / CSS / JavaScript
+- localStorage 浏览器缓存
+- CloudBase MySQL 8.0（原始数据存储）
+
+## Gitee
+
+<https://gitee.com/ExtraCilantro/sw-map>
+# 可转债申万行业思维导图
+
 一个本地即可运行的交互式思维导图网页，用于按申万行业分类整理可转债。
 
 ## 功能
