@@ -90,6 +90,10 @@
   <!-- 数据加载（优先从 API 拉取，失败则用本地缓存/降级） -->
   <script>
   (function() {
+    // 显示加载状态
+    var infoEl = document.getElementById('dataInfo');
+    if (infoEl) infoEl.textContent = '加载数据中…';
+
     // 尝试从 localStorage 恢复缓存
     var isCached = false;
     try {
@@ -99,120 +103,127 @@
         window.BOND_DETAIL_MAP = cache.b;
         window.BOND_LIST = cache.l || [];
         isCached = true;
+        if (infoEl) {
+          var cnt = Object.keys(window.BOND_DETAIL_MAP).length;
+          infoEl.textContent = '🔄 刷新数据… (' + cnt + ' 只)';
+        }
       }
     } catch(e) {}
 
+    var scriptLoaded = {};
     function loadScript(src, cb) {
+      if (scriptLoaded[src]) { if (cb) cb(); return; }
+      scriptLoaded[src] = true;
       var s = document.createElement('script');
       s.src = src;
-      s.onload = cb;
-      s.onerror = cb;
+      s.onload = cb || null;
+      s.onerror = cb || null;
       document.body.appendChild(s);
     }
 
+    var appLoaded = false;
     function loadApp() {
+      if (appLoaded) return;
+      appLoaded = true;
       loadScript('js/app.js');
     }
 
-    // 从 API 拉取债券数据
-    function fetchBondData() {
-      var url = API_CONFIG.baseUrl + API_CONFIG.dataPath + '?token=' + API_CONFIG.token;
+    // 从指定 URL 拉取债券数据（带重试）
+    function fetchFromUrl(url, retriesLeft) {
       var xhr = new XMLHttpRequest();
       xhr.open('GET', url, true);
-      xhr.timeout = 15000;
+      xhr.timeout = 10000;
       xhr.onload = function() {
         if (xhr.status === 200) {
           try {
             var resp = JSON.parse(xhr.responseText);
             if (resp.success && resp.data) {
-              var detailMap = resp.data.detailMap || {};
-              var bondList = resp.data.list || [];
-              window.BOND_DETAIL_MAP = detailMap;
-              window.BOND_LIST = bondList;
-
-              // 更新数据信息
-              var infoEl = document.getElementById('dataInfo');
-              if (infoEl) {
-                var total = resp.data.total || Object.keys(detailMap).length;
-                infoEl.textContent = '数据: ' + (resp.data.generatedAt || '') + ' │ ' + total + ' 只 (API)';
-              }
-
-              // 缓存到 localStorage
-              setTimeout(function() {
-                try {
-                  if (typeof STOCK_INDUSTRY_MAP !== 'undefined') {
-                    localStorage.setItem('sw_map_data', JSON.stringify({
-                      v: 1, t: Date.now(),
-                      s: window.STOCK_INDUSTRY_MAP,
-                      b: window.BOND_DETAIL_MAP,
-                      l: window.BOND_LIST || []
-                    }));
-                  }
-                } catch(e) {}
-              }, 1000);
-
-              // 如果 stockIndustryMap 还没加载，现在加载
-              if (typeof STOCK_INDUSTRY_MAP === 'undefined') {
-                loadScript('js/stockIndustryMap.js', loadApp);
-              } else {
-                loadApp();
-              }
+              onDataLoaded(resp.data);
               return;
             }
-          } catch(e) {
-            console.warn('API 数据解析失败:', e);
-          }
+          } catch(e) {}
         }
-        // API 失败，使用缓存或降级方案
-        fetchBondDataFailed();
+        onFetchFail(retriesLeft);
       };
-      xhr.onerror = fetchBondDataFailed;
-      xhr.ontimeout = fetchBondDataFailed;
+      xhr.onerror = function() { onFetchFail(retriesLeft); };
+      xhr.ontimeout = function() { onFetchFail(retriesLeft); };
       xhr.send();
     }
 
-    // API 拉取失败后的降级
-    function fetchBondDataFailed() {
+    function onDataLoaded(data) {
+      var detailMap = data.detailMap || {};
+      var bondList = data.list || [];
+      window.BOND_DETAIL_MAP = detailMap;
+      window.BOND_LIST = bondList;
+
+      var total = data.total || Object.keys(detailMap).length;
+      if (infoEl) infoEl.textContent = '数据: ' + (data.generatedAt || '') + ' │ ' + total + ' 只';
+
+      // 缓存
+      setTimeout(function() {
+        try {
+          if (typeof STOCK_INDUSTRY_MAP !== 'undefined') {
+            localStorage.setItem('sw_map_data', JSON.stringify({
+              v: 1, t: Date.now(),
+              s: window.STOCK_INDUSTRY_MAP,
+              b: window.BOND_DETAIL_MAP,
+              l: window.BOND_LIST || []
+            }));
+          }
+        } catch(e) {}
+      }, 1000);
+
+      // 确保 stockIndustryMap 已加载
+      if (typeof STOCK_INDUSTRY_MAP === 'undefined') {
+        loadScript('js/stockIndustryMap.js', loadApp);
+      } else {
+        loadApp();
+      }
+    }
+
+    function onFetchFail(retriesLeft) {
+      if (retriesLeft > 0) {
+        // 尝试备用域名
+        fetchFromUrl(API_CONFIG.baseUrlAlt + API_CONFIG.dataPath + '?token=' + API_CONFIG.token, retriesLeft - 1);
+        return;
+      }
+      // 全部失败，走缓存或降级
       if (isCached) {
-        // 已有内存缓存，直接启动
+        if (infoEl) infoEl.textContent = '📦 离线模式 (缓存)';
         loadApp();
         return;
       }
-      // 无缓存，加载本地静态文件
+      if (infoEl) infoEl.textContent = '加载静态数据…';
       loadScript('js/stockIndustryMap.js', function() {
         loadScript('js/bondData.js', function() {
-          // 数据加载后缓存
-          window.addEventListener('load', function() {
-            setTimeout(function() {
-              try {
-                if (typeof STOCK_INDUSTRY_MAP !== 'undefined' && typeof BOND_DETAIL_MAP !== 'undefined') {
-                  localStorage.setItem('sw_map_data', JSON.stringify({
-                    v: 1, t: Date.now(),
-                    s: STOCK_INDUSTRY_MAP,
-                    b: BOND_DETAIL_MAP,
-                    l: typeof BOND_LIST !== 'undefined' ? BOND_LIST : []
-                  }));
-                  var infoEl = document.getElementById('dataInfo');
-                  if (infoEl) infoEl.textContent = '数据: ' + (BOND_DETAIL_MAP.generatedAt || 'cache') + ' │ ' + Object.keys(BOND_DETAIL_MAP).length + ' 只';
-                }
-              } catch(e) {}
-            }, 1000);
-          });
+          setTimeout(function() {
+            try {
+              if (typeof STOCK_INDUSTRY_MAP !== 'undefined' && typeof BOND_DETAIL_MAP !== 'undefined') {
+                localStorage.setItem('sw_map_data', JSON.stringify({
+                  v: 1, t: Date.now(),
+                  s: STOCK_INDUSTRY_MAP,
+                  b: BOND_DETAIL_MAP,
+                  l: typeof BOND_LIST !== 'undefined' ? BOND_LIST : []
+                }));
+                if (infoEl) infoEl.textContent = '数据: ' + Object.keys(BOND_DETAIL_MAP).length + ' 只';
+              }
+            } catch(e) {}
+          }, 1000);
           loadApp();
         });
       });
     }
 
-    // 启动：先尝试 API 获取，同时加载 stockIndustryMap
-    if (isCached) {
-      // 有缓存，API 和本地文件并行
-      fetchBondData();
+    // 启动：先加载 stockIndustryMap，同时尝试 API
+    if (isCached && typeof STOCK_INDUSTRY_MAP !== 'undefined') {
+      // 有缓存且 stockIndustryMap 已就绪：并行尝试 API
+      fetchFromUrl(API_CONFIG.baseUrl + API_CONFIG.dataPath + '?token=' + API_CONFIG.token, 1);
     } else {
-      // 无缓存，同时加载 stockIndustryMap.js + 尝试 API
+      // 无缓存：先加载 stockIndustryMap
       loadScript('js/stockIndustryMap.js', function() {
-        // stockIndustryMap 加载完毕，等 API 回来
+        // 然后尝试 API
+        fetchFromUrl(API_CONFIG.baseUrl + API_CONFIG.dataPath + '?token=' + API_CONFIG.token, 1);
       });
-      fetchBondData();
     }
   })();
   </script>
