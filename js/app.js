@@ -995,6 +995,12 @@ function resetView() {
 
 // 页面加载完成后初始化
 // DOM 就绪后启动
+window.onerror = function(msg, url, line, col, err) {
+  var m = '❌ GLOBAL: ' + (err ? err.message || err : msg) + ' (at ' + line + ':' + col + ')';
+  if (typeof log !== 'undefined') log(m);
+  var el = document.getElementById('dataInfo');
+  if (el) el.textContent = m;
+};
 (function() {
   function ready() {
     initChart();
