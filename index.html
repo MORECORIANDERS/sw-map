@@ -84,11 +84,13 @@
   <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
 
   <!-- 自定义脚本 -->
+  <script src="js/apiConfig.js"></script>
   <script src="js/swIndustryData.js"></script>
 
-  <!-- 大文件缓存+动态加载（stockIndustryMap.js ~594KB, bondData.js ~328KB） -->
+  <!-- 数据加载（优先从 API 拉取，失败则用本地缓存/降级） -->
   <script>
   (function() {
+    // 尝试从 localStorage 恢复缓存
     var isCached = false;
     try {
       var cache = JSON.parse(localStorage.getItem('sw_map_data'));
@@ -112,9 +114,71 @@
       loadScript('js/app.js');
     }
 
-    if (isCached) {
-      loadApp();
-    } else {
+    // 从 API 拉取债券数据
+    function fetchBondData() {
+      var url = API_CONFIG.baseUrl + API_CONFIG.dataPath + '?token=' + API_CONFIG.token;
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 15000;
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          try {
+            var resp = JSON.parse(xhr.responseText);
+            if (resp.success && resp.data) {
+              var detailMap = resp.data.detailMap || {};
+              var bondList = resp.data.list || [];
+              window.BOND_DETAIL_MAP = detailMap;
+              window.BOND_LIST = bondList;
+
+              // 更新数据信息
+              var infoEl = document.getElementById('dataInfo');
+              if (infoEl) {
+                var total = resp.data.total || Object.keys(detailMap).length;
+                infoEl.textContent = '数据: ' + (resp.data.generatedAt || '') + ' │ ' + total + ' 只 (API)';
+              }
+
+              // 缓存到 localStorage
+              setTimeout(function() {
+                try {
+                  if (typeof STOCK_INDUSTRY_MAP !== 'undefined') {
+                    localStorage.setItem('sw_map_data', JSON.stringify({
+                      v: 1, t: Date.now(),
+                      s: window.STOCK_INDUSTRY_MAP,
+                      b: window.BOND_DETAIL_MAP,
+                      l: window.BOND_LIST || []
+                    }));
+                  }
+                } catch(e) {}
+              }, 1000);
+
+              // 如果 stockIndustryMap 还没加载，现在加载
+              if (typeof STOCK_INDUSTRY_MAP === 'undefined') {
+                loadScript('js/stockIndustryMap.js', loadApp);
+              } else {
+                loadApp();
+              }
+              return;
+            }
+          } catch(e) {
+            console.warn('API 数据解析失败:', e);
+          }
+        }
+        // API 失败，使用缓存或降级方案
+        fetchBondDataFailed();
+      };
+      xhr.onerror = fetchBondDataFailed;
+      xhr.ontimeout = fetchBondDataFailed;
+      xhr.send();
+    }
+
+    // API 拉取失败后的降级
+    function fetchBondDataFailed() {
+      if (isCached) {
+        // 已有内存缓存，直接启动
+        loadApp();
+        return;
+      }
+      // 无缓存，加载本地静态文件
       loadScript('js/stockIndustryMap.js', function() {
         loadScript('js/bondData.js', function() {
           // 数据加载后缓存
@@ -123,12 +187,13 @@
               try {
                 if (typeof STOCK_INDUSTRY_MAP !== 'undefined' && typeof BOND_DETAIL_MAP !== 'undefined') {
                   localStorage.setItem('sw_map_data', JSON.stringify({
-                    v: 1,
-                    t: Date.now(),
+                    v: 1, t: Date.now(),
                     s: STOCK_INDUSTRY_MAP,
                     b: BOND_DETAIL_MAP,
                     l: typeof BOND_LIST !== 'undefined' ? BOND_LIST : []
                   }));
+                  var infoEl = document.getElementById('dataInfo');
+                  if (infoEl) infoEl.textContent = '数据: ' + (BOND_DETAIL_MAP.generatedAt || 'cache') + ' │ ' + Object.keys(BOND_DETAIL_MAP).length + ' 只';
                 }
               } catch(e) {}
             }, 1000);
@@ -136,6 +201,18 @@
           loadApp();
         });
       });
+    }
+
+    // 启动：先尝试 API 获取，同时加载 stockIndustryMap
+    if (isCached) {
+      // 有缓存，API 和本地文件并行
+      fetchBondData();
+    } else {
+      // 无缓存，同时加载 stockIndustryMap.js + 尝试 API
+      loadScript('js/stockIndustryMap.js', function() {
+        // stockIndustryMap 加载完毕，等 API 回来
+      });
+      fetchBondData();
     }
   })();
   </script>
