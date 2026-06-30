@@ -6,17 +6,26 @@
   <title>可转债申万行业思维导图</title>
 
   <!-- 自定义样式 -->
-  <link rel="stylesheet" href="css/style.css?v=2" />
+  <link rel="stylesheet" href="css/style.css?v=3" />
 </head>
 <body>
   <!-- 顶部工具栏 -->
   <div class="toolbar">
     <div class="title">可转债申万行业思维导图</div>
+
+    <!-- 搜索框 -->
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="搜转债名称 / 代码 / 正股…" autocomplete="off" />
+      <div class="search-dropdown" id="searchDropdown"></div>
+    </div>
+
     <div class="actions">
       <button onclick="expandAll()">展开全部</button>
       <button onclick="collapseAll()">收起全部</button>
       <button onclick="resetView()">重置视图</button>
     </div>
+
+    <span class="data-info" id="dataInfo">数据加载中…</span>
   </div>
 
   <!-- 脑图主区域 -->
@@ -35,6 +44,9 @@
     <div class="panel-body">
       <p class="hint">
         点击左侧脑图中的任意节点查看详情。点击具体转债节点可查看代码、规模、评级、转股价值等完整信息。
+      </p>
+      <p class="hint">
+        🔍 顶栏搜索框支持输入转债名称、代码或正股名称快速定位。
       </p>
     </div>
   </div>

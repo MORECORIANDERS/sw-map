@@ -58,6 +58,19 @@ function buildBondIndex() {
 }
 
 /* ============================
+ * 快速判断：转债是否已到期/退市
+ * ============================ */
+function isBondDefunct(bond) {
+  if (bond.price === null || bond.price === undefined) return true;
+  if (bond.maturityDate) {
+    var now = new Date();
+    var m = new Date(bond.maturityDate.replace(/-/g, "/"));
+    if (m < now) return true;
+  }
+  return false;
+}
+
+/* ============================
  * 从真实申万数据构建树
  * ============================ */
 function buildTreeData() {
@@ -92,8 +105,12 @@ function buildTreeData() {
     if (!groups[sector]) return;
     const sectorColor = SECTOR_COLORS[sector];
 
+    // 统计板块下总转债数
+    var sectorBonds = (bondIndexSector[sector] || []).length;
+    var sectorLabel = sectorBonds > 0 ? sector + "  (" + sectorBonds + "只)" : sector;
+
     const sectorNode = {
-      name: sector,
+      name: sectorLabel,
       value: `sector-${slug(sector)}`,
       collapsed: false,
       data: { type: "sector", name: sector },
@@ -103,9 +120,13 @@ function buildTreeData() {
       children: []
     };
     Object.entries(groups[sector]).forEach(([l1Name, l2List]) => {
+      // 统计一级行业总转债数
+      var l1Bonds = (bondIndexL1["l1|" + l1Name] || []).length;
+      var l1Label = l1Bonds > 0 ? l1Name + "  (" + l1Bonds + "只)" : l1Name;
+
       // 一级节点：申万一级行业
       const l1Node = {
-        name: l1Name,
+        name: l1Label,
         value: `l1-${slug(l1Name)}`,
         collapsed: true,
         data: { type: "level1", name: l1Name },
@@ -117,8 +138,14 @@ function buildTreeData() {
 
       l2List.forEach(l2Name => {
         // 二级节点：申万二级行业
+        var bondsInL2 = bondIndex[l1Name + "|" + l2Name] || [];
+        var l2Bonds = bondsInL2.length;
+        var hasDefunct = bondsInL2.some(function(b) { return isBondDefunct(b); });
+        var activeBonds = l2Bonds - (hasDefunct ? bondsInL2.filter(function(b) { return isBondDefunct(b); }).length : 0);
+        var l2Label = l2Bonds > 0 ? l2Name + "  (" + l2Bonds + "只)" : l2Name;
+
         const l2Node = {
-          name: l2Name,
+          name: l2Label,
           value: `l2-${slug(l1Name)}-${slug(l2Name)}`,
           collapsed: true,
           data: { type: "level2", name: l2Name, level1: l1Name },
@@ -128,23 +155,50 @@ function buildTreeData() {
           children: []
         };
 
-        // 挂载该二级行业下的可转债（通过正股代码查行业分类）
-        var bondsInL2 = bondIndex[l1Name + "|" + l2Name] || [];
+        // 挂载该二级行业下的可转债
         bondsInL2.forEach(function(bond) {
-          var showPrice = bond.price !== null && bond.price !== undefined && bond.changePct !== null;
-          var displayName = showPrice
-            ? bond.bondName + "  " + bond.price.toFixed(2)
-            : bond.bondName;
+          var isDead = isBondDefunct(bond);
+          var showPrice = !isDead && bond.price !== null && bond.price !== undefined && bond.changePct !== null;
+
+          var displayName;
+          if (isDead) {
+            displayName = bond.bondName + "  (到期)";
+          } else if (showPrice) {
+            displayName = bond.bondName + "  " + bond.price.toFixed(2);
+          } else {
+            displayName = bond.bondName;
+          }
+
+          // 颜色：到期灰、涨红跌绿
+          var labelColor, labelBg;
+          if (isDead) {
+            labelColor = "#94a3b8";
+            labelBg = "rgba(248,250,252,0.85)";
+          } else if (showPrice && bond.changePct >= 0) {
+            labelColor = "#dc2626";
+            labelBg = "rgba(254,242,242,0.9)";
+          } else if (showPrice && bond.changePct < 0) {
+            labelColor = "#16a34a";
+            labelBg = "rgba(240,253,244,0.9)";
+          } else {
+            labelColor = "#334155";
+            labelBg = "rgba(255,255,255,0.85)";
+          }
+
           l2Node.children.push({
             name: displayName,
             value: "bond-" + bond.bondCode,
             data: { type: "bond", bondCode: bond.bondCode },
-            itemStyle: { color: "#ffffff", borderColor: "#94a3b8" },
+            itemStyle: {
+              color: isDead ? "#f8fafc" : "#ffffff",
+              borderColor: isDead ? "#cbd5e1" : (showPrice ? (bond.changePct >= 0 ? "#fca5a5" : "#86efac") : "#94a3b8")
+            },
             label: {
-              backgroundColor: "rgba(255,255,255,0.85)",
-              color: "#334155",
+              backgroundColor: labelBg,
+              color: labelColor,
               fontSize: 14,
-              fontWeight: "normal",
+              fontWeight: isDead ? "normal" : "normal",
+              fontStyle: isDead ? "italic" : "normal",
               padding: [2, 6],
               borderRadius: 3
             },
@@ -174,10 +228,17 @@ function initChart() {
   const wrapper = document.getElementById("chart-wrapper");
   const container = document.getElementById("chart-container");
 
-  // 画布：宽度100%占满窗口，纵向留足空间可滚动
-  const h = wrapper.clientHeight;
+  // 动态计算画布高度：按节点数量估算
+  var totalBonds = 0;
+  if (typeof BOND_DETAIL_MAP !== "undefined") {
+    totalBonds = Object.keys(BOND_DETAIL_MAP).length;
+  }
+  // 每个 bond 节点约 26px，加上各级中间节点（约总节点数的 40%）
+  var estNodes = totalBonds * 1.4;
+  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 26, 2000);
+
   container.style.width = "100%";
-  container.style.height = Math.max(h, 2000) + "px";
+  container.style.height = dynamicHeight + "px";
 
   chart = echarts.init(container);
   buildBondIndex();
@@ -186,7 +247,261 @@ function initChart() {
   chart.setOption(option);
 
   chart.on("click", handleNodeClick);
-  window.addEventListener("resize", () => chart.resize());
+  window.addEventListener("resize", function() { chart.resize(); });
+
+  // 显示数据日期
+  showDataInfo();
+  // 初始化搜索
+  initSearch();
+}
+
+/* ============================
+ * 显示数据日期
+ * ============================ */
+function showDataInfo() {
+  var el = document.getElementById("dataInfo");
+  if (!el) return;
+  if (typeof BOND_DETAIL_MAP === "undefined") { el.textContent = "无数据"; return; }
+
+  var dates = [];
+  Object.values(BOND_DETAIL_MAP).forEach(function(b) {
+    if (b.tradeDate) dates.push(b.tradeDate);
+  });
+  if (dates.length === 0) { el.textContent = "数据日期未知"; return; }
+
+  dates.sort().reverse();
+  var latest = dates[0];
+  var count = Object.keys(BOND_DETAIL_MAP).length;
+  el.textContent = "数据: " + latest + "  |  " + count + " 只";
+}
+
+/* ============================
+ * 搜索功能
+ * ============================ */
+var SEARCH_SELECTED_INDEX = -1;
+
+function initSearch() {
+  var input = document.getElementById("searchInput");
+  var dropdown = document.getElementById("searchDropdown");
+  if (!input || !dropdown) return;
+
+  // 输入时搜索
+  input.addEventListener("input", function() {
+    var q = input.value.trim();
+    if (q.length < 1) {
+      dropdown.classList.remove("show");
+      return;
+    }
+    var matches = doSearch(q);
+    renderSearchDropdown(matches, q);
+    SEARCH_SELECTED_INDEX = -1;
+  });
+
+  // 失焦关闭（延迟让点击事件先触发）
+  input.addEventListener("blur", function() {
+    setTimeout(function() { dropdown.classList.remove("show"); }, 200);
+  });
+
+  // 聚焦时如果有结果重新显示
+  input.addEventListener("focus", function() {
+    if (input.value.trim().length >= 1) {
+      var matches = doSearch(input.value.trim());
+      if (matches.length > 0) renderSearchDropdown(matches, input.value.trim());
+    }
+  });
+
+  // 键盘上下选择 + Enter 确认
+  input.addEventListener("keydown", function(e) {
+    var items = dropdown.querySelectorAll(".search-item");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      SEARCH_SELECTED_INDEX = Math.min(SEARCH_SELECTED_INDEX + 1, items.length - 1);
+      updateSearchHighlight(items);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      SEARCH_SELECTED_INDEX = Math.max(SEARCH_SELECTED_INDEX - 1, 0);
+      updateSearchHighlight(items);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (SEARCH_SELECTED_INDEX >= 0 && SEARCH_SELECTED_INDEX < items.length) {
+        var bc = items[SEARCH_SELECTED_INDEX].getAttribute("data-bond");
+        if (bc) { dropdown.classList.remove("show"); onSearchSelect(bc); }
+      } else if (items.length > 0) {
+        var bc2 = items[0].getAttribute("data-bond");
+        if (bc2) { dropdown.classList.remove("show"); onSearchSelect(bc2); }
+      }
+    } else if (e.key === "Escape") {
+      dropdown.classList.remove("show");
+    }
+  });
+}
+
+function updateSearchHighlight(items) {
+  items.forEach(function(el, i) {
+    el.classList.toggle("active", i === SEARCH_SELECTED_INDEX);
+  });
+  // 滚动到可见
+  if (SEARCH_SELECTED_INDEX >= 0 && items[SEARCH_SELECTED_INDEX]) {
+    items[SEARCH_SELECTED_INDEX].scrollIntoView({ block: "nearest" });
+  }
+}
+
+function doSearch(query) {
+  var q = query.toLowerCase();
+  var results = [];
+  if (typeof BOND_DETAIL_MAP === "undefined") return results;
+
+  Object.values(BOND_DETAIL_MAP).forEach(function(b) {
+    var score = 0;
+    // 转债代码精确匹配优先
+    if (b.bondCode && b.bondCode.indexOf(q) !== -1) {
+      score = b.bondCode === q ? 100 : 80;
+    }
+    // 转债名称
+    if (b.bondName && b.bondName.toLowerCase().indexOf(q) !== -1) {
+      score = Math.max(score, b.bondName.toLowerCase() === q ? 90 : 60);
+    }
+    // 正股名称
+    if (b.stockName && b.stockName.toLowerCase().indexOf(q) !== -1) {
+      score = Math.max(score, b.stockName.toLowerCase() === q ? 85 : 50);
+    }
+    // 正股代码
+    if (b.stockCode && b.stockCode.indexOf(q) !== -1) {
+      score = Math.max(score, b.stockCode === q ? 95 : 70);
+    }
+    if (score > 0) {
+      results.push({ bond: b, score: score });
+    }
+  });
+
+  results.sort(function(a, b) { return b.score - a.score; });
+  return results.slice(0, 20);
+}
+
+function renderSearchDropdown(matches, query) {
+  var dropdown = document.getElementById("searchDropdown");
+  if (!dropdown) return;
+
+  if (matches.length === 0) {
+    dropdown.innerHTML =
+      '<div class="search-empty">未匹配到"' + escHtml(query) + '"<div class="hint-text">试试搜转债名、代码或正股名</div></div>';
+    dropdown.classList.add("show");
+    return;
+  }
+
+  var html = "";
+  matches.forEach(function(m) {
+    var b = m.bond;
+    var ind = lookupBondIndustry(b);
+    var industryPath = ind ? (findSectorByLevel1(ind.l1) || "") + " / " + ind.l1 : b.industryLevel1 || "";
+    html +=
+      '<div class="search-item" data-bond="' + b.bondCode + '">' +
+        '<span><span class="si-name">' + escHtml(b.bondName) + '</span>' +
+        '<span class="si-code">' + b.bondCode + '</span></span>' +
+        '<span class="si-industry">' + escHtml(industryPath) + '</span>' +
+      '</div>';
+  });
+
+  dropdown.innerHTML = html;
+  dropdown.classList.add("show");
+
+  // 绑定点击事件
+  var items = dropdown.querySelectorAll(".search-item");
+  items.forEach(function(el) {
+    el.addEventListener("mousedown", function(e) {
+      e.preventDefault();
+      var bc = this.getAttribute("data-bond");
+      dropdown.classList.remove("show");
+      if (bc) onSearchSelect(bc);
+    });
+  });
+}
+
+function escHtml(str) {
+  if (!str) return "";
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/* ============================
+ * 搜索选中某转债 → 展开路径 + 高亮
+ * ============================ */
+function onSearchSelect(bondCode) {
+  var bd = typeof BOND_DETAIL_MAP !== "undefined" ? BOND_DETAIL_MAP[bondCode] : null;
+  if (!bd) return;
+
+  // 获取行业路径
+  var ind = lookupBondIndustry(bd);
+  if (!ind) { handleNodeClick({ data: { data: { type: "bond", bondCode: bondCode } } }); return; }
+
+  var sector = findSectorByLevel1(ind.l1);
+  if (!sector) { handleNodeClick({ data: { data: { type: "bond", bondCode: bondCode } } }); return; }
+
+  // 构建完整的展开树：只展开目标路径
+  var expandedTree = buildExpandedTree(treeData, sector, ind.l1, ind.l2, bondCode);
+  if (!expandedTree) return;
+
+  chart.setOption({ series: [{ data: [expandedTree] }] }, { notMerge: false });
+
+  // 高亮目标节点
+  setTimeout(function() {
+    chart.dispatchAction({ type: "downplay", seriesIndex: 0 });
+    chart.dispatchAction({
+      type: "highlight",
+      seriesIndex: 0,
+      name: findBondNodeName(bd)
+    });
+    // 触发详情面板
+    handleNodeClick({ data: { data: { type: "bond", bondCode: bondCode } } });
+  }, 350);
+}
+
+function findBondNodeName(bd) {
+  var isDead = isBondDefunct(bd);
+  var showPrice = !isDead && bd.price !== null && bd.changePct !== null;
+  if (isDead) return bd.bondName + "  (到期)";
+  if (showPrice) return bd.bondName + "  " + bd.price.toFixed(2);
+  return bd.bondName;
+}
+
+function buildExpandedTree(originalTree, sector, l1Name, l2Name, bondCode) {
+  if (!originalTree) return null;
+  var clone = JSON.parse(JSON.stringify(originalTree));
+
+  // 找到板块
+  var sectorNode = (clone.children || []).find(function(c) {
+    return c.data && c.data.type === "sector" && c.data.name === sector;
+  });
+  if (!sectorNode) return null;
+  sectorNode.collapsed = false;
+
+  // 找到一级行业
+  var l1Node = (sectorNode.children || []).find(function(c) {
+    return c.data && c.data.type === "level1" && c.data.name === l1Name;
+  });
+  if (!l1Node) return null;
+  l1Node.collapsed = false;
+
+  // 找到二级行业
+  var l2Node = (l1Node.children || []).find(function(c) {
+    return c.data && c.data.type === "level2" && c.data.name === l2Name;
+  });
+  if (!l2Node) return null;
+  l2Node.collapsed = false;
+
+  // 找到转债节点，标记高亮信息
+  var bondNode = (l2Node.children || []).find(function(c) {
+    return c.data && c.data.data && c.data.data.type === "bond" && c.data.data.bondCode === bondCode;
+  });
+  if (bondNode) {
+    // 加粗加亮边框
+    bondNode.itemStyle = bondNode.itemStyle || {};
+    bondNode.itemStyle.borderColor = "#3b82f6";
+    bondNode.itemStyle.borderWidth = 2;
+    bondNode.itemStyle.shadowBlur = 6;
+    bondNode.itemStyle.shadowColor = "rgba(59,130,246,0.3)";
+  }
+
+  return clone;
 }
 
 /* ============================
@@ -203,25 +518,51 @@ function getChartOption(data) {
         if (type === "bond") {
           const bd = typeof BOND_DETAIL_MAP !== "undefined" ? BOND_DETAIL_MAP[node.data?.bondCode] : null;
           if (bd) {
-            const changeStr = bd.changePct !== null
-              ? `${bd.changePct >= 0 ? "+" : ""}${bd.changePct.toFixed(2)}%`
+            var isDead = isBondDefunct(bd);
+            var changeStr = bd.changePct !== null
+              ? (bd.changePct >= 0 ? "+" : "") + bd.changePct.toFixed(2) + "%"
               : "-";
-            return `<b>${bd.bondName}</b><br/>` +
-                   `转债代码: ${bd.bondCode}<br/>` +
-                   `正股: ${bd.stockName || "-"}<br/>` +
-                   `评级: ${bd.rating || "-"}<br/>` +
-                    (bd.price !== null && bd.price !== undefined ? `价格: ${bd.price.toFixed(3)} (${changeStr})` : "");
+            var priceStr = (bd.price !== null && bd.price !== undefined) ? bd.price.toFixed(3) : "已到期/退市";
+            var ind = lookupBondIndustry(bd);
+            var pathStr = ind ? (findSectorByLevel1(ind.l1) || "") + " → " + ind.l1 + " → " + ind.l2 : (bd.industryLevel1 || "-");
+
+            if (isDead) {
+              return "<b>" + bd.bondName + "</b><br/>" +
+                     "转债代码: " + bd.bondCode + "<br/>" +
+                     "评级: " + (bd.rating || "-") + "<br/>" +
+                     "到期日期: " + (bd.maturityDate || "-") + "<br/>" +
+                     "⚠ 已到期/退市<br/>" +
+                     "<hr style='margin:4px 0;border:none;border-top:1px solid #e2e8f0'/>" +
+                     "<span style='color:#94a3b8;font-size:11px'>" + pathStr + "</span>";
+            }
+
+            return "<b>" + bd.bondName + "</b><br/>" +
+                   "转债代码: " + bd.bondCode + "<br/>" +
+                   "正股: " + (bd.stockName || "-") + "<br/>" +
+                   "评级: " + (bd.rating || "-") + "<br/>" +
+                   "价格: " + priceStr + " (<span style='color:" + (bd.changePct >= 0 ? "#ef4444" : "#10b981") + "'>" + changeStr + "</span>)<br/>" +
+                   "规模: " + (bd.latestAmount ? bd.latestAmount.toFixed(2) + "亿" : "-") + "<br/>" +
+                   "<hr style='margin:4px 0;border:none;border-top:1px solid #e2e8f0'/>" +
+                   "<span style='color:#64748b;font-size:11px'>" + pathStr + "</span>";
           }
-          return `<b>${node.name}</b><br/>可转债`;
+          return "<b>" + node.name + "</b><br/>可转债";
         }
         if (type === "level1") {
-          return `<b>${node.name}</b><br/>申万一级行业`;
+          var l1Bonds = (bondIndexL1["l1|" + node.data?.name] || []).length;
+          return "<b>" + node.name + "</b><br/>申万一级行业" +
+                 (l1Bonds > 0 ? "<br/><span style='color:#3b82f6'>含 " + l1Bonds + " 只可转债</span>" : "");
         }
         if (type === "level2") {
-          return `<b>${node.name}</b><br/>申万二级行业`;
+          var l1 = node.data?.level1 || "";
+          var key = l1 + "|" + node.data?.name;
+          var l2Bonds = (bondIndex[key] || []).length;
+          return "<b>" + node.name + "</b><br/>申万二级行业" +
+                 (l2Bonds > 0 ? "<br/><span style='color:#3b82f6'>含 " + l2Bonds + " 只可转债</span>" : "");
         }
         if (type === "sector") {
-          return `<b>${node.name}</b><br/>六大风格板块`;
+          var sb = (bondIndexSector[node.data?.name] || []).length;
+          return "<b>" + node.name + "</b><br/>六大风格板块" +
+                 (sb > 0 ? "<br/><span style='color:#3b82f6'>含 " + sb + " 只可转债</span>" : "");
         }
         return node.name;
       }
@@ -304,7 +645,7 @@ function showDetailPanel(panel, node, type) {
  * ============================ */
 function renderIndustryDetail(panel, node) {
   const type = node.data?.type;
-  const name = node.name;
+  const name = node.data?.name || node.name.replace(/\s+\(\d+只\)$/, "");
   const level1 = node.data?.level1 || "";
   const sector = findSectorByLevel1(type === "level2" ? level1 : name);
   const sectorColor = SECTOR_COLORS[sector] || "#3b82f6";
@@ -418,25 +759,23 @@ function renderBondDetail(panel, node) {
     return;
   }
 
+  var isDead = isBondDefunct(bd);
+
   // 通过正股代码获取准确行业分类
   const ind = lookupBondIndustry(bd);
   const displayL1 = ind ? ind.l1 : (bd.industryLevel1 || "-");
   const displayL2 = ind ? ind.l2 : (bd.industryLevel2 || "-");
   const displaySector = ind ? (findSectorByLevel1(ind.l1) || bd.sector || "-") : (bd.sector || "-");
   const sectorColor = SECTOR_COLORS[displaySector] || "#3b82f6";
-  const changeColor = bd.changePct !== null
-    ? (bd.changePct >= 0 ? "#ef4444" : "#10b981")
-    : "#64748b";
-  const changeSign = bd.changePct !== null
-    ? (bd.changePct >= 0 ? "+" : "")
-    : "";
-  const changeStr = bd.changePct !== null
-    ? `${changeSign}${bd.changePct.toFixed(2)}%`
-    : "-";
+
+  var changeColor = isDead ? "#94a3b8" : (bd.changePct !== null ? (bd.changePct >= 0 ? "#ef4444" : "#10b981") : "#64748b");
+  var changeSign = bd.changePct !== null ? (bd.changePct >= 0 ? "+" : "") : "";
+  var changeStr = bd.changePct !== null ? changeSign + bd.changePct.toFixed(2) + "%" : "-";
+  var priceStr = (bd.price !== null && bd.price !== undefined) ? bd.price.toFixed(3) : "已到期/退市";
 
   panel.innerHTML = `
     <div class="panel-header" style="border-left-color: ${sectorColor}">
-      <h3>${bd.bondName}</h3>
+      <h3>${bd.bondName}${isDead ? ' <span style="color:#94a3b8;font-size:12px;font-weight:normal">(到期)</span>' : ""}</h3>
       <button class="close-btn" onclick="closePanel()">&times;</button>
     </div>
     <div class="panel-body">
@@ -452,6 +791,7 @@ function renderBondDetail(panel, node) {
         <span class="label">正股代码</span>
         <span class="value">${bd.stockCode || "-"}</span>
       </div>
+      ${isDead ? `<div class="detail-row"><span class="label">状态</span><span class="value" style="color:#94a3b8">已到期/退市</span></div>` : ""}
       <div class="detail-row">
         <span class="label">信用评级</span>
         <span class="value">${bd.rating || "-"}</span>
@@ -474,9 +814,7 @@ function renderBondDetail(panel, node) {
       </div>
       <div class="detail-row" style="border-top: 2px solid #f1f5f9; margin-top: 8px; padding-top: 12px;">
         <span class="label">最新价格</span>
-        <span class="value" style="color:${changeColor};font-weight:700;font-size:16px">
-          ${bd.price !== null && bd.price !== undefined ? bd.price.toFixed(3) : "-"}
-        </span>
+        <span class="value" style="color:${changeColor};font-weight:700;font-size:16px">${priceStr}</span>
       </div>
       <div class="detail-row">
         <span class="label">涨跌幅</span>
@@ -543,7 +881,7 @@ function renderSectorDetail(panel, node) {
  * ============================ */
 function renderNodeSummary(panel, node) {
   const type = node.data?.type;
-  const name = node.name;
+  const name = node.data?.name || node.name.replace(/\s+\(\d+只\)$/, "");
   const childCount = countDescendants(node);
 
   let typeText = {
@@ -622,8 +960,13 @@ function resetView() {
   if (!chart) return;
   const wrapper = document.getElementById("chart-wrapper");
   const container = document.getElementById("chart-container");
-  container.style.width = "100%";
-  container.style.height = Math.max(wrapper.clientHeight, 2000) + "px";
+
+  var totalBonds = 0;
+  if (typeof BOND_DETAIL_MAP !== "undefined") totalBonds = Object.keys(BOND_DETAIL_MAP).length;
+  var estNodes = totalBonds * 1.4;
+  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 26, 2000);
+  container.style.height = dynamicHeight + "px";
+
   treeData = buildTreeData();
   chart.setOption(getChartOption(treeData));
   closePanel();
