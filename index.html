@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>可转债申万行业思维导图</title>
+
+  <!-- 自定义样式 -->
+  <link rel="stylesheet" href="css/style.css?v=2" />
+</head>
+<body>
+  <!-- 顶部工具栏 -->
+  <div class="toolbar">
+    <div class="title">可转债申万行业思维导图</div>
+    <div class="actions">
+      <button onclick="expandAll()">展开全部</button>
+      <button onclick="collapseAll()">收起全部</button>
+      <button onclick="resetView()">重置视图</button>
+    </div>
+  </div>
+
+  <!-- 脑图主区域 -->
+  <div id="main">
+    <div id="chart-wrapper">
+      <div id="chart-container"></div>
+    </div>
+  </div>
+
+  <!-- 详情面板 -->
+  <div id="detail-panel">
+    <div class="panel-header">
+      <h3>欢迎使用</h3>
+      <button class="close-btn" onclick="closePanel()">&times;</button>
+    </div>
+    <div class="panel-body">
+      <p class="hint">
+        点击左侧脑图中的任意节点查看详情。点击具体转债节点可查看代码、规模、评级、转股价值等完整信息。
+      </p>
+    </div>
+  </div>
+
+  <!-- 图例 -->
+  <div class="legend">
+    <div class="legend-title">六大风格板块</div>
+    <div class="legend-item">
+      <span class="legend-dot" style="background-color: #f59e0b;"></span>
+      <span>周期</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-dot" style="background-color: #06b6d4;"></span>
+      <span>先进制造</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-dot" style="background-color: #8b5cf6;"></span>
+      <span>科技(TMT)</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-dot" style="background-color: #ef4444;"></span>
+      <span>消费</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-dot" style="background-color: #10b981;"></span>
+      <span>医药医疗</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-dot" style="background-color: #d97706;"></span>
+      <span>金融地产</span>
+    </div>
+  </div>
+
+  <!-- ECharts JS -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+
+  <!-- 自定义脚本 -->
+  <script src="js/swIndustryData.js"></script>
+
+  <!-- 大文件缓存+动态加载（stockIndustryMap.js ~594KB, bondData.js ~328KB） -->
+  <script>
+  (function() {
+    var isCached = false;
+    try {
+      var cache = JSON.parse(localStorage.getItem('sw_map_data'));
+      if (cache && cache.v === 1 && Date.now() - cache.t < 86400000) {
+        window.STOCK_INDUSTRY_MAP = cache.s;
+        window.BOND_DETAIL_MAP = cache.b;
+        window.BOND_LIST = cache.l || [];
+        isCached = true;
+      }
+    } catch(e) {}
+
+    function loadScript(src, cb) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = cb;
+      s.onerror = cb;
+      document.body.appendChild(s);
+    }
+
+    function loadApp() {
+      loadScript('js/app.js');
+    }
+
+    if (isCached) {
+      loadApp();
+    } else {
+      loadScript('js/stockIndustryMap.js', function() {
+        loadScript('js/bondData.js', function() {
+          // 数据加载后缓存
+          window.addEventListener('load', function() {
+            setTimeout(function() {
+              try {
+                if (typeof STOCK_INDUSTRY_MAP !== 'undefined' && typeof BOND_DETAIL_MAP !== 'undefined') {
+                  localStorage.setItem('sw_map_data', JSON.stringify({
+                    v: 1,
+                    t: Date.now(),
+                    s: STOCK_INDUSTRY_MAP,
+                    b: BOND_DETAIL_MAP,
+                    l: typeof BOND_LIST !== 'undefined' ? BOND_LIST : []
+                  }));
+                }
+              } catch(e) {}
+            }, 1000);
+          });
+          loadApp();
+        });
+      });
+    }
+  })();
+  </script>
+</body>
+</html>
