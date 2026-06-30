@@ -237,9 +237,9 @@ function initChart() {
     totalBonds = Object.keys(BOND_DETAIL_MAP).length;
   }
 
-  // 每个 bond 节点约 14px，加上各级中间节点（约总节点数的 40%）
+  // 每个 bond 节点约 8px，加上各级中间节点（约总节点数的 40%）
   var estNodes = totalBonds * 1.4;
-  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 14, 2000);
+  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 8, 2000);
 
   container.style.width = "100%";
   container.style.height = dynamicHeight + "px";
@@ -970,7 +970,7 @@ function resetView() {
   var totalBonds = 0;
   if (typeof BOND_DETAIL_MAP !== "undefined") totalBonds = Object.keys(BOND_DETAIL_MAP).length;
   var estNodes = totalBonds * 1.4;
-  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 14, 2000);
+  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 8, 2000);
   container.style.height = dynamicHeight + "px";
 
   treeData = buildTreeData();
