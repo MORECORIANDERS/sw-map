@@ -623,12 +623,15 @@ function handleNodeClick(params) {
   var node = params && params.data;
   if (!node) return;
   const type = node.data?.type;
-  const panel = document.getElementById("detail-panel");
 
   // 高亮当前节点（展开/折叠由 ECharts expandAndCollapse 自动处理）
   chart.dispatchAction({ type: "downplay", seriesIndex: 0 });
   chart.dispatchAction({ type: "highlight", seriesIndex: 0, name: node.name });
-  showDetailPanel(panel, node, type);
+
+  // 仅可转债节点触发右侧详情面板，中间节点悬浮查看 tooltip 信息
+  if (type === "bond") {
+    showDetailPanel(document.getElementById("detail-panel"), node, type);
+  }
 }
 
 function showDetailPanel(panel, node, type) {
