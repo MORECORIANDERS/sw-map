@@ -143,7 +143,7 @@ function buildTreeData() {
             label: {
               backgroundColor: "rgba(255,255,255,0.85)",
               color: "#334155",
-              fontSize: 10,
+              fontSize: 14,
               fontWeight: "normal",
               padding: [2, 6],
               borderRadius: 3
