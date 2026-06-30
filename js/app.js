@@ -225,38 +225,28 @@ let chart = null;
 let treeData = null;
 
 function initChart() {
-  try {
-    log('initChart 开始');
   const wrapper = document.getElementById("chart-wrapper");
   const container = document.getElementById("chart-container");
 
-  if (!container) { log('❌ chart-container 不存在'); return; }
-  if (typeof echarts === 'undefined') { log('❌ ECharts 未加载'); return; }
+  if (!container) return;
+  if (typeof echarts === 'undefined') return;
 
   // 动态计算画布高度：按节点数量估算
   var totalBonds = 0;
   if (typeof BOND_DETAIL_MAP !== "undefined") {
     totalBonds = Object.keys(BOND_DETAIL_MAP).length;
   }
-  log('BOND_DETAIL_MAP keys: ' + totalBonds);
-  if (totalBonds === 0) { log('⚠️ 债券数据为空，可能数据尚未加载'); }
 
-  // 每个 bond 节点约 26px，加上各级中间节点（约总节点数的 40%）
+  // 每个 bond 节点约 14px，加上各级中间节点（约总节点数的 40%）
   var estNodes = totalBonds * 1.4;
-  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 26, 2000);
+  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 14, 2000);
 
   container.style.width = "100%";
   container.style.height = dynamicHeight + "px";
 
-  if (typeof echarts === 'undefined') {
-    log('❌ echarts.init 无法执行');
-    return;
-  }
   chart = echarts.init(container);
-  log('ECharts init 成功');
 
   buildBondIndex();
-  log('bondIndex 构建完成');
 
   treeData = buildTreeData();
   const option = getChartOption(treeData);
@@ -268,12 +258,7 @@ function initChart() {
   // 显示数据日期
   showDataInfo();
   // 初始化搜索
-    initSearch();
-  } catch(e) {
-    log('❌ initChart 异常: ' + (e.message || e));
-    if (infoEl) infoEl.textContent = '❌ 加载错误: ' + (e.message || '未知错误');
-  }
-  log('initChart 完成');
+  initSearch();
 }
 
 /* ============================
@@ -985,7 +970,7 @@ function resetView() {
   var totalBonds = 0;
   if (typeof BOND_DETAIL_MAP !== "undefined") totalBonds = Object.keys(BOND_DETAIL_MAP).length;
   var estNodes = totalBonds * 1.4;
-  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 26, 2000);
+  var dynamicHeight = Math.max(wrapper.clientHeight, estNodes * 14, 2000);
   container.style.height = dynamicHeight + "px";
 
   treeData = buildTreeData();
@@ -996,8 +981,7 @@ function resetView() {
 // 页面加载完成后初始化
 // DOM 就绪后启动
 window.onerror = function(msg, url, line, col, err) {
-  var m = '❌ GLOBAL: ' + (err ? err.message || err : msg) + ' (at ' + line + ':' + col + ')';
-  if (typeof log !== 'undefined') log(m);
+  var m = '❌ ' + (err ? err.message || err : msg) + ' (at ' + line + ':' + col + ')';
   var el = document.getElementById('dataInfo');
   if (el) el.textContent = m;
 };

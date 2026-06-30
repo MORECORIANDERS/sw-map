@@ -28,9 +28,6 @@
     <span class="data-info" id="dataInfo">数据加载中…</span>
   </div>
 
-  <!-- 调试面板 -->
-  <pre id="dbg-panel" style="position:fixed;bottom:0;right:0;z-index:9999;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.4 monospace;padding:6px 10px;max-height:200px;overflow:auto;max-width:400px;white-space:pre-wrap;margin:0;border-radius:4px 0 0 0;pointer-events:none;display:none;"></pre>
-
   <!-- 脑图主区域 -->
   <div id="main">
     <div id="chart-wrapper">
@@ -95,9 +92,6 @@
   <script>
   (function() {
     var infoEl = document.getElementById('dataInfo');
-    var dbgEl = document.getElementById('dbg-panel');
-    if (dbgEl) dbgEl.style.display = 'block';
-    log('=== SW-Map 启动 ===');
 
     if (infoEl) infoEl.textContent = '加载数据中…';
 
@@ -111,21 +105,19 @@
         window.BOND_LIST = cache.l || [];
         isCached = true;
         var cc = Object.keys(window.BOND_DETAIL_MAP).length;
-        log('缓存命中: ' + cc + ' 只');
         if (infoEl) infoEl.textContent = '🔄 刷新数据… (' + cc + ' 只)';
       }
-    } catch(e) { log('缓存异常: ' + e.message); }
+    } catch(e) {}
 
     // 去重脚本加载
     var loadedScripts = {};
     function loadJS(src, cb) {
-      if (loadedScripts[src]) { log('⏭ 跳过: ' + src); if (cb) setTimeout(cb, 0); return; }
+      if (loadedScripts[src]) { if (cb) setTimeout(cb, 0); return; }
       loadedScripts[src] = true;
-      log('📥 加载: ' + src);
       var s = document.createElement('script');
       s.src = src;
-      s.onload = function() { log('✅ 完成: ' + src); if (cb) cb(); };
-      s.onerror = function() { log('❌ 失败: ' + src); if (cb) cb(); };
+      s.onload = function() { if (cb) cb(); };
+      s.onerror = function() { if (cb) cb(); };
       document.body.appendChild(s);
     }
 
@@ -133,32 +125,28 @@
     function startApp() {
       if (appStarted) return;
       appStarted = true;
-      log('🚀 启动 app.js');
       loadJS('js/app.js');
     }
 
     // API 获取
     function tryAPI(url) {
-      log('🌐 API: ' + url.replace(/token=.*/, 'token=***'));
       var xhr = new XMLHttpRequest();
       xhr.open('GET', url, true);
       xhr.timeout = 10000;
       xhr.onload = function() {
-        log('📡 API状态=' + xhr.status);
         if (xhr.status === 200) {
           try {
             var r = JSON.parse(xhr.responseText);
             if (r.success && r.data) {
-              log('✅ API成功 ' + (r.data.total || '?') + ' 只');
               onData(r.data);
               return;
             }
-          } catch(e) { log('⚠️ API解析失败: ' + e.message); }
+          } catch(e) {}
         }
         onFail();
       };
-      xhr.onerror = function() { log('⚠️ 网络错误'); onFail(); };
-      xhr.ontimeout = function() { log('⚠️ 超时'); onFail(); };
+      xhr.onerror = function() { onFail(); };
+      xhr.ontimeout = function() { onFail(); };
       xhr.send();
     }
 
@@ -166,7 +154,6 @@
       window.BOND_DETAIL_MAP = d.detailMap || {};
       window.BOND_LIST = d.list || [];
       var n = Object.keys(window.BOND_DETAIL_MAP).length;
-      log('📊 数据就绪: ' + n + ' 只, ' + (d.generatedAt || '?'));
       if (infoEl) infoEl.textContent = '数据: ' + (d.generatedAt || '') + ' │ ' + n + ' 只';
 
       // 缓存到 localStorage
@@ -184,15 +171,11 @@
     function onFail() {
       if (apiRetries > 0) {
         apiRetries--;
-        log('↪ 尝试备用域名...');
         tryAPI(API_CONFIG.baseUrlAlt + API_CONFIG.dataPath + '?token=' + API_CONFIG.token);
         return;
       }
-      log('📦 API全部失败，降级方案');
       if (isCached) {
-        log('⚡ 用离线缓存');
         if (infoEl) infoEl.textContent = '📦 离线模式 (缓存)';
-        // 确保 stockIndustryMap 已加载
         if (typeof STOCK_INDUSTRY_MAP === 'undefined') {
           loadJS('js/stockIndustryMap.js', startApp);
         } else {
@@ -200,13 +183,11 @@
         }
         return;
       }
-      log('📄 无缓存，加载静态文件');
       if (infoEl) infoEl.textContent = '加载静态数据…';
       loadJS('js/stockIndustryMap.js', function() {
         loadJS('js/bondData.js', function() {
           try {
             var n = Object.keys(window.BOND_DETAIL_MAP || {}).length;
-            log('静态文件就绪: ' + n + ' 只');
             localStorage.setItem('sw_map_data', JSON.stringify({
               v: 1, t: Date.now(),
               s: window.STOCK_INDUSTRY_MAP,
@@ -222,12 +203,9 @@
 
     // 加载 stockIndustryMap，然后试 API
     if (isCached && typeof STOCK_INDUSTRY_MAP !== 'undefined') {
-      log('有缓存+stockMap就绪，直接试API');
       tryAPI(API_CONFIG.baseUrl + API_CONFIG.dataPath + '?token=' + API_CONFIG.token);
     } else {
-      log('先加载stockIndustryMap...');
       loadJS('js/stockIndustryMap.js', function() {
-        log('stockMap就绪，试API');
         tryAPI(API_CONFIG.baseUrl + API_CONFIG.dataPath + '?token=' + API_CONFIG.token);
       });
     }

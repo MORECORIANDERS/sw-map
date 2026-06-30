@@ -8,12 +8,5 @@ var API_CONFIG = {
   dataPath: '/api/sw-map-data',
 };
 
-// 调试日志（全局可用）
-var DBG = { msgs: [] };
-DBG.log = function(msg) {
-  DBG.msgs.push('[' + new Date().toLocaleTimeString() + '] ' + msg);
-  var el = document.getElementById('dbg-panel');
-  if (el) el.textContent = DBG.msgs.join('\n');
-};
-var log = DBG.log; // 全局别名
-log('API config loaded');
+// 空日志函数（保留兼容，避免引用报错）
+var log = function() {};
